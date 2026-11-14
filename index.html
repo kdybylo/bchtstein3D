@@ -76,6 +76,38 @@
     .start-btn:hover { background: #34344a; }
     .start-btn.recommended { border-color: #ffd24a; box-shadow: 0 0 14px rgba(255,210,74,0.45); }
 
+    /* Volba vzhledu zdí před spuštěním hry */
+    .wall-choice { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+    .wall-choice-label { font-size: 15px; font-weight: bold; }
+    .wall-buttons { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+    .wall-btn {
+      font: inherit; color: #fff; background: #252530; border: 2px solid #55556a;
+      border-radius: 8px; padding: 9px 14px; cursor: pointer;
+    }
+    .wall-btn:hover { background: #34344a; }
+    .wall-btn.selected { border-color: #ffd24a; box-shadow: 0 0 10px rgba(255,210,74,0.35); }
+
+    /* Obtížnost mění výbavu a sílu nepřátel. */
+    .difficulty-choice { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+    .difficulty-label { font-size: 15px; font-weight: bold; }
+    .difficulty-buttons { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+    .difficulty-btn {
+      font: inherit; color: #fff; background: #252530; border: 2px solid #55556a;
+      border-radius: 8px; padding: 9px 14px; cursor: pointer;
+    }
+    .difficulty-btn:hover { background: #34344a; }
+    .difficulty-btn.selected { border-color: #ffd24a; box-shadow: 0 0 10px rgba(255,210,74,0.35); }
+
+    .mode-choice { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+    .mode-label { font-size: 15px; font-weight: bold; }
+    .mode-buttons { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+    .mode-btn {
+      font: inherit; color: #fff; background: #252530; border: 2px solid #55556a;
+      border-radius: 8px; padding: 9px 14px; cursor: pointer;
+    }
+    .mode-btn:hover { background: #34344a; }
+    .mode-btn.selected { border-color: #ffd24a; box-shadow: 0 0 10px rgba(255,210,74,0.35); }
+
     /* ===== Dotykové ovladače (viditelné jen v režimu dotyku) ===== */
     #touch-controls { position: fixed; inset: 0; z-index: 15; pointer-events: none; display: none; }
     body.touch-mode #touch-controls { display: block; }
@@ -128,6 +160,7 @@
   <div id="hud">
     <div id="hud-health">❤️ Životy: 100</div>
     <div id="hud-kills">💀 Zabito: 0 / 0</div>
+    <div id="hud-stance"></div>
   </div>
 
   <!-- Dotykové ovladače -->
@@ -145,11 +178,34 @@
   <!-- Úvodní obrazovka: volba ovládání -->
   <div id="overlay">
     <h1>🔫 Moje střílečka</h1>
+    <div class="wall-choice">
+      <div class="wall-choice-label">Vzhled zdí</div>
+      <div class="wall-buttons">
+        <button id="btn-walls-brick" class="wall-btn selected">🧱 Cihlové</button>
+        <button id="btn-walls-factory" class="wall-btn">🏭 Továrna</button>
+      </div>
+    </div>
+    <div class="difficulty-choice">
+      <div class="difficulty-label">Obtížnost</div>
+      <div class="difficulty-buttons">
+        <button id="btn-difficulty-easy" class="difficulty-btn selected">🙂 Easy – figurky</button>
+        <button id="btn-difficulty-normal" class="difficulty-btn">🪖 Normální – vojáci</button>
+        <button id="btn-difficulty-medium" class="difficulty-btn">🎯 Střední – rychlí střelci</button>
+        <button id="btn-difficulty-hard" class="difficulty-btn">🔫 Těžká – elitní střelci</button>
+      </div>
+    </div>
+    <div class="mode-choice">
+      <div class="mode-label">Režim hry</div>
+      <div class="mode-buttons">
+        <button id="btn-mode-survival" class="mode-btn selected">♾️ Přežití</button>
+        <button id="btn-mode-career" class="mode-btn">🎯 Kariéra – puška</button>
+      </div>
+    </div>
     <div class="start-buttons">
       <button id="btn-keyboard" class="start-btn">
         <span class="emoji">⌨️</span>
         <span>Klávesnice + myš</span>
-        <span class="sub">WASD, myš, levé tlačítko střílí</span>
+        <span class="sub">WASD, myš, levé tlačítko střílí, levý Ctrl = skrčení</span>
       </button>
       <button id="btn-touch" class="start-btn">
         <span class="emoji">📱</span>
@@ -157,7 +213,7 @@
         <span class="sub">joystick, tažení, tlačítko střelby</span>
       </button>
     </div>
-    <p>Vyber, jak chceš hrát. Cíl: zneškodni všechny nepřátele a přežij.</p>
+    <p>Easy má jednoduché figurky. V ostatních volbách jsou 3D vojáci, kteří kryjí pozice a střílí. Puška je jen v dohratelné Kariéře.</p>
   </div>
 
   <!-- Hlavní kód hry -->

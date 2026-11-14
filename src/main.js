@@ -110,6 +110,53 @@ function makeBrickTexture() {
   return tex;
 }
 
+// Tovární stěna: velké betonové panely, spáry a jemné stopy stáří.
+function makeFactoryTexture() {
+  const c = document.createElement('canvas');
+  c.width = 256; c.height = 256;
+  const g = c.getContext('2d');
+
+  g.fillStyle = '#666b6c';
+  g.fillRect(0, 0, c.width, c.height);
+
+  // Nepravidelné odstíny dodají betonu živější, trochu oprýskaný vzhled.
+  for (let i = 0; i < 450; i++) {
+    const shade = 82 + Math.floor(Math.random() * 28);
+    g.fillStyle = `rgba(${shade}, ${shade + 3}, ${shade + 3}, ${0.05 + Math.random() * 0.1})`;
+    const size = 1 + Math.random() * 5;
+    g.fillRect(Math.random() * 256, Math.random() * 256, size, size);
+  }
+
+  // Spáry mezi prefabrikovanými betonovými panely.
+  g.strokeStyle = '#373c3e';
+  g.lineWidth = 5;
+  g.beginPath();
+  g.moveTo(128, 0); g.lineTo(128, 256);
+  g.moveTo(0, 86); g.lineTo(256, 86);
+  g.moveTo(0, 172); g.lineTo(256, 172);
+  g.stroke();
+  g.strokeStyle = 'rgba(190, 195, 190, 0.22)';
+  g.lineWidth = 1;
+  g.beginPath();
+  g.moveTo(131, 0); g.lineTo(131, 256);
+  g.moveTo(0, 89); g.lineTo(256, 89);
+  g.moveTo(0, 175); g.lineTo(256, 175);
+  g.stroke();
+
+  // Kovové kotvy v rozích panelů.
+  g.fillStyle = '#303638';
+  for (const x of [10, 118, 138, 246]) {
+    for (const y of [10, 76, 96, 162, 182, 246]) {
+      g.beginPath(); g.arc(x, y, 2.5, 0, Math.PI * 2); g.fill();
+    }
+  }
+
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(2, 2);
+  return tex;
+}
+
 // Dlaždicová podlaha
 function makeFloorTexture() {
   const c = document.createElement('canvas');
@@ -126,6 +173,7 @@ function makeFloorTexture() {
 }
 
 const brickTexture = makeBrickTexture();
+const factoryTexture = makeFactoryTexture();
 const floorTexture = makeFloorTexture();
 
 // Podlaha (jedna velká deska přes celou mapu)
@@ -149,6 +197,17 @@ scene.add(ceiling);
 // Objekty pro střelbu (paprsek) a pro kolize (neprůchodnost)
 const shootables = [floor];
 const obstacles = [];
+
+// Nízké objekty se chovají jako skutečné kryty: zastaví hráče i střelu.
+function addCover(mesh) {
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  scene.add(mesh);
+  mesh.updateMatrixWorld(true);
+  obstacles.push(new THREE.Box3().setFromObject(mesh));
+  shootables.push(mesh);
+  return mesh;
+}
 
 // Vytvoří jednu zeď (buňku mřížky) na daných světových souřadnicích
 const wallMaterial = new THREE.MeshStandardMaterial({ map: brickTexture });
@@ -179,6 +238,42 @@ for (let row = 0; row < ROWS; row++) {
     }
   }
 }
+
+// Tovární část: dva pásy, bedny a kovové kryty mezi kterými lze bojovat.
+const metal = new THREE.MeshStandardMaterial({ color: 0x3c474c, metalness: 0.65, roughness: 0.45 });
+const belt = new THREE.MeshStandardMaterial({ color: 0x171a1b, metalness: 0.25, roughness: 0.8 });
+const wood = new THREE.MeshStandardMaterial({ color: 0x6c482d, roughness: 0.9 });
+function addFactoryBelt(x, z, length, rotation = 0) {
+  const group = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.BoxGeometry(length, 0.55, 1.05), belt);
+  body.position.y = 0.82; group.add(body);
+  for (const offset of [-length / 2 + 0.35, length / 2 - 0.35]) {
+    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.16, 1.4, 0.82), metal);
+    leg.position.set(offset, 0.45, 0); group.add(leg);
+  }
+  group.position.set(x, 0, z); group.rotation.y = rotation;
+  addCover(group);
+}
+function addCrateStack(x, z, height = 1) {
+  const crate = new THREE.Mesh(new THREE.BoxGeometry(1.3, 1.2 * height, 1.3), wood);
+  crate.position.set(x, 0.6 * height, z);
+  addCover(crate);
+}
+function addHouseFurniture(x, z) {
+  // Sedačka, stůl a skříň vytvářejí kryt v "domácí" části mapy.
+  const sofa = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.85, 0.7), new THREE.MeshStandardMaterial({ color: 0x673d35, roughness: 0.95 }));
+  sofa.position.set(x, 0.43, z); addCover(sofa);
+  const table = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.72, 1.1), wood);
+  table.position.set(x + 2.1, 0.36, z + 0.4); addCover(table);
+  const cabinet = new THREE.Mesh(new THREE.BoxGeometry(0.7, 1.8, 1.5), new THREE.MeshStandardMaterial({ color: 0x4b3022, roughness: 0.85 }));
+  cabinet.position.set(x - 1.9, 0.9, z - 0.2); addCover(cabinet);
+}
+addFactoryBelt(4, -6, 5.5);
+addFactoryBelt(12, -2, 5.5);
+addCrateStack(8, 6, 2);
+addCrateStack(-8, 14);
+addHouseFurniture(-18, 10);
+addHouseFurniture(18, 14);
 
 // ------------------------------------------------------------
 // 4) OVLÁDÁNÍ: klávesnice+myš NEBO dotyk (mobil) – hráč si vybere na startu
@@ -214,6 +309,62 @@ function clampPitch() {
 // --- Výběr ovládání na úvodní obrazovce ---
 const btnKeyboard = document.getElementById('btn-keyboard');
 const btnTouch = document.getElementById('btn-touch');
+const btnWallsBrick = document.getElementById('btn-walls-brick');
+const btnWallsFactory = document.getElementById('btn-walls-factory');
+const difficultyButtons = {
+  easy: document.getElementById('btn-difficulty-easy'),
+  normal: document.getElementById('btn-difficulty-normal'),
+  medium: document.getElementById('btn-difficulty-medium'),
+  hard: document.getElementById('btn-difficulty-hard'),
+};
+const modeButtons = {
+  survival: document.getElementById('btn-mode-survival'),
+  career: document.getElementById('btn-mode-career'),
+};
+let gameMode = 'survival';
+
+function selectGameMode(mode) {
+  gameMode = mode;
+  for (const [name, button] of Object.entries(modeButtons)) {
+    button.classList.toggle('selected', name === mode);
+  }
+  // Funkce je volaná z tlačítka až po načtení celé stránky.
+  if (typeof updatePlayerWeapon === 'function') updatePlayerWeapon();
+}
+for (const [name, button] of Object.entries(modeButtons)) {
+  button.addEventListener('click', () => selectGameMode(name));
+}
+
+// Easy zachovává kreslené figurky. Ostatní obtížnosti používají ozbrojené 3D vojáky.
+let difficulty = 'easy';
+function selectDifficulty(selected) {
+  difficulty = selected;
+  for (const [name, button] of Object.entries(difficultyButtons)) {
+    button.classList.toggle('selected', name === selected);
+  }
+  // Dokud hra nezačala, ihned vyměníme ukázané nepřátele za vybranou variantu.
+  if (!controlMode) {
+    for (const enemy of enemies) scene.remove(enemy.sprite);
+    enemies.length = 0;
+    for (const spawn of enemySpawns) spawnEnemy(spawn.x, spawn.z, difficulty);
+    updateHud();
+  }
+}
+for (const [name, button] of Object.entries(difficultyButtons)) {
+  button.addEventListener('click', () => selectDifficulty(name));
+}
+
+// Výchozí varianta zachovává původní cihlovou zeď.
+function selectWallStyle(style) {
+  const factory = style === 'factory';
+  wallMaterial.map = factory ? factoryTexture : brickTexture;
+  wallMaterial.needsUpdate = true;
+  btnWallsBrick.classList.toggle('selected', !factory);
+  btnWallsFactory.classList.toggle('selected', factory);
+}
+
+btnWallsBrick.addEventListener('click', () => selectWallStyle('brick'));
+btnWallsFactory.addEventListener('click', () => selectWallStyle('factory'));
 
 // Podle zařízení předvybereme (zvýrazníme) doporučenou volbu
 const isTouchDevice = (navigator.maxTouchPoints || 0) > 0 || 'ontouchstart' in window;
@@ -261,6 +412,7 @@ function endGame(message) {
 const keys = {};
 document.addEventListener('keydown', (e) => { keys[e.code] = true; });
 document.addEventListener('keyup',   (e) => { keys[e.code] = false; });
+let isCrouching = false;
 
 document.addEventListener('mousemove', (e) => {
   if (controlMode !== 'keyboard') return;
@@ -381,7 +533,7 @@ function collides(x, z) {
 
 // Obrázek nepřítele si nakreslíme rovnou v kódu (na skrytou kreslicí plochu),
 // takže nemusíme nic stahovat. Vytvoříme jednoduchou "příšerku".
-function makeEnemyTexture() {
+function makeEnemyTexture(kind) {
   const c = document.createElement('canvas');
   c.width = 128; c.height = 128;
   const g = c.getContext('2d');
@@ -404,26 +556,91 @@ function makeEnemyTexture() {
   g.strokeStyle = '#000'; g.lineWidth = 5;
   g.beginPath(); g.arc(64, 100, 18, Math.PI, 0); g.stroke();
 
+  // Výbava jasně ukazuje, jakou obtížnost sis vybral.
+  if (kind === 'medium') {
+    g.strokeStyle = '#c9a45b'; g.lineWidth = 6;
+    g.beginPath(); g.moveTo(96, 116); g.lineTo(114, 18); g.stroke();
+    g.fillStyle = '#d7dde0';
+    g.beginPath(); g.moveTo(114, 10); g.lineTo(106, 29); g.lineTo(120, 27); g.fill();
+  } else if (kind === 'hard') {
+    g.fillStyle = '#4a4f59';
+    g.fillRect(86, 82, 35, 12);
+    g.fillRect(105, 92, 9, 17);
+    g.fillStyle = '#181b20'; g.fillRect(112, 85, 14, 5);
+  }
+
   const tex = new THREE.CanvasTexture(c);
   tex.magFilter = THREE.NearestFilter; // ostré pixely (retro nádech)
   return tex;
 }
 
-const enemyTexture = makeEnemyTexture();
+const enemyTextures = {
+  normal: makeEnemyTexture('normal'),
+  medium: makeEnemyTexture('medium'),
+  hard: makeEnemyTexture('hard'),
+};
+
+const enemySettings = {
+  easy: { health: 2, speed: 1.45, touchRange: 1.7, touchDamage: 9, respawnMs: 5500 },
+  normal: { health: 3, speed: 1.85, touchRange: 1.8, touchDamage: 12, respawnMs: 4800, gunRange: 11, gunDamage: 6, gunCooldown: 1.8 },
+  medium: { health: 4, speed: 2.1, touchRange: 1.7, touchDamage: 14, respawnMs: 4200, gunRange: 14, gunDamage: 9, gunCooldown: 1.35 },
+  hard: { health: 5, speed: 2.25, touchRange: 1.6, touchDamage: 16, respawnMs: 3800, gunRange: 17, gunDamage: 12, gunCooldown: 0.95 },
+};
+
+function makeEasyFigure() {
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: enemyTextures.normal, transparent: true }));
+  sprite.scale.set(1.65, 1.65, 1);
+  // Kotva u nohou: figurka stojí na podlaze a neprochází jí.
+  sprite.center.set(0.5, 0.08);
+  sprite.position.y = 0.02;
+  return { model: sprite, muzzle: null, simple: true };
+}
+
+// Jednoduchý, ale skutečně prostorový voják místo původního plochého obrázku.
+function makeEnemySoldier(kind) {
+  if (kind === 'easy') return makeEasyFigure();
+  const model = new THREE.Group();
+  const uniformColor = kind === 'hard' ? 0x354a58 : kind === 'medium' ? 0x55623f : 0x52634b;
+  const uniform = new THREE.MeshStandardMaterial({ color: uniformColor, roughness: 0.8 });
+  const skin = new THREE.MeshStandardMaterial({ color: 0xb77d5c, roughness: 0.9 });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x1b2024, roughness: 0.65 });
+
+  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.75, 0.28), uniform);
+  torso.position.y = 1.25; model.add(torso);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.23, 12, 10), skin);
+  head.position.y = 1.83; model.add(head);
+  const helmet = new THREE.Mesh(new THREE.SphereGeometry(0.245, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2), dark);
+  helmet.position.y = 1.9; model.add(helmet);
+  for (const side of [-1, 1]) {
+    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.72, 0.2), dark);
+    leg.position.set(side * 0.16, 0.43, 0); model.add(leg);
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.62, 0.16), uniform);
+    arm.position.set(side * 0.37, 1.28, -0.05); arm.rotation.z = side * 0.2; model.add(arm);
+  }
+
+  // Voják drží pušku ve všech bojových režimech; Easy zůstává beze zbraně.
+  const rifle = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, 0.85), dark);
+  rifle.position.set(0.35, 1.38, -0.42); rifle.rotation.x = Math.PI / 2; model.add(rifle);
+  const stock = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.16, 0.3), new THREE.MeshStandardMaterial({ color: 0x4a3321 }));
+  stock.position.set(0.35, 1.3, -0.18); model.add(stock);
+  const muzzle = new THREE.Mesh(new THREE.SphereGeometry(0.055, 8, 8), new THREE.MeshBasicMaterial({ color: 0xffcc55 }));
+  muzzle.position.set(0.35, 1.38, -0.9); muzzle.visible = false; model.add(muzzle);
+  model.scale.setScalar(0.9);
+  return { model, muzzle };
+}
 
 // Seznam živých nepřátel
 const enemies = [];
 
 // Vytvoří nepřítele na dané pozici
-function spawnEnemy(x, z) {
-  const material = new THREE.SpriteMaterial({ map: enemyTexture });
-  const sprite = new THREE.Sprite(material);
-  sprite.scale.set(1.4, 1.4, 1); // velikost ~1,4 m
-  sprite.position.set(x, 0.9, z); // těsně nad podlahou
-  scene.add(sprite);
+function spawnEnemy(x, z, kind = difficulty) {
+  const { model, muzzle } = makeEnemySoldier(kind);
+  model.position.set(x, 0, z);
+  scene.add(model);
 
-  const enemy = { sprite, health: 3 };
-  sprite.userData.enemyRef = enemy; // ať u zásahu poznáme, že jde o nepřítele
+  const enemy = { sprite: model, muzzle, health: enemySettings[kind].health, kind, spawn: { x, z }, shotCooldown: 0 };
+  // Paprsek může trefit libovolnou část těla i zbraně.
+  model.traverse(part => { part.userData.enemyRef = enemy; });
   enemies.push(enemy);
   return enemy;
 }
@@ -433,15 +650,15 @@ for (const s of enemySpawns) spawnEnemy(s.x, s.z);
 
 // Pohyb nepřátel: každý jde k hráči (pomaleji než ty, dá se utéct).
 // Používáme stejné kolize jako hráč, takže neprojdou zdí.
-const ENEMY_SPEED = 2.0; // metry za sekundu (hráč má 5)
 function moveEnemies(dt) {
   for (const e of enemies) {
     let dx = camera.position.x - e.sprite.position.x;
     let dz = camera.position.z - e.sprite.position.z;
     const dist = Math.hypot(dx, dz);
+    if (!e.simple && dist > 0.01) e.sprite.rotation.y = Math.atan2(-dx, -dz);
     if (dist < 1.2 || dist === 0) continue; // už je u tebe – netlačí se dovnitř
     dx /= dist; dz /= dist;               // směr k hráči (délka 1)
-    const step = ENEMY_SPEED * dt;
+    const step = enemySettings[e.kind].speed * dt;
     const nx = e.sprite.position.x + dx * step;
     const nz = e.sprite.position.z + dz * step;
     // Pohyb po osách zvlášť, ať kloužou podél stěn (neuvíznou)
@@ -453,13 +670,14 @@ function moveEnemies(dt) {
 // --- Stav hráče a HUD (životy + počet zabitých) ---
 let kills = 0;
 let playerHealth = 100;
-const totalEnemies = enemies.length;
 const healthEl = document.getElementById('hud-health');
 const killsEl = document.getElementById('hud-kills');
+const stanceEl = document.getElementById('hud-stance');
 
 function updateHud() {
   if (healthEl) healthEl.textContent = '❤️ Životy: ' + Math.max(0, Math.ceil(playerHealth));
-  if (killsEl) killsEl.textContent = '💀 Zabito: ' + kills + ' / ' + totalEnemies;
+  if (killsEl) killsEl.textContent = '💀 Zabito: ' + kills + ' | Aktivních: ' + enemies.length;
+  if (stanceEl) stanceEl.textContent = isCrouching ? '🛡️ Skrčený za krytem' : '';
 }
 updateHud();
 
@@ -474,37 +692,65 @@ function damageEnemy(enemy) {
     kills += 1;
     updateHud();
     playEnemyDeath();
-    if (enemies.length === 0) endGame('🏆 Vyhráls! Všichni nepřátelé zneškodněni.');
+    // V Přežití se vrací. Kariéra je jednorázová mise, kterou lze vyhrát.
+    const { x, z } = enemy.spawn;
+    const kind = enemy.kind;
+    if (gameMode === 'career' && enemies.length === 0) {
+      endGame('🏆 Mise splněna! Vyčistil jsi továrnu i domy.');
+    } else if (gameMode === 'survival') setTimeout(() => {
+      if (!gameOver) {
+        spawnEnemy(x, z, kind);
+        updateHud();
+      }
+    }, enemySettings[kind].respawnMs);
   } else {
     // Zásah, ale žije – krátce zčervená jako zpětná vazba
     playEnemyHit();
-    enemy.sprite.material.color.setHex(0xff5555);
-    setTimeout(() => enemy.sprite.material.color.setHex(0xffffff), 120);
+    flashEnemy(enemy, 0xff5555, 120);
   }
+}
+
+function flashEnemy(enemy, color, duration) {
+  const original = [];
+  enemy.sprite.traverse(part => {
+    if (part.material && part.material.color) {
+      original.push([part.material, part.material.color.getHex()]);
+      part.material.color.setHex(color);
+    }
+  });
+  setTimeout(() => {
+    if (!enemy.sprite.parent) return;
+    for (const [material, originalColor] of original) material.color.setHex(originalColor);
+  }, duration);
 }
 
 // ------------------------------------------------------------
 // 5b) ZBRAŇ + STŘÍLENÍ
 // ------------------------------------------------------------
 
-// --- Model zbraně (jednoduchý kvádr) připnutý ke kameře v pravé dolní části ---
+// --- Model kariérní pušky připnutý ke kameře v pravé dolní části ---
 const gun = new THREE.Group();
 
 const gunBody = new THREE.Mesh(
-  new THREE.BoxGeometry(0.15, 0.15, 0.6),
-  new THREE.MeshStandardMaterial({ color: 0x222222 })
+  new THREE.BoxGeometry(0.18, 0.18, 0.82),
+  new THREE.MeshStandardMaterial({ color: 0x273036, metalness: 0.65, roughness: 0.42 })
 );
-gunBody.position.set(0, 0, -0.1);
+gunBody.position.set(0, 0, -0.2);
 gun.add(gunBody);
 
 // Hlaveň
 const gunBarrel = new THREE.Mesh(
-  new THREE.CylinderGeometry(0.03, 0.03, 0.5),
-  new THREE.MeshStandardMaterial({ color: 0x111111 })
+  new THREE.CylinderGeometry(0.035, 0.035, 0.72),
+  new THREE.MeshStandardMaterial({ color: 0x111111, metalness: 0.75 })
 );
 gunBarrel.rotation.x = Math.PI / 2; // otočíme dopředu
-gunBarrel.position.set(0, 0.02, -0.5);
+gunBarrel.position.set(0, 0.05, -0.92);
 gun.add(gunBarrel);
+
+const gunStock = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.2, 0.42), new THREE.MeshStandardMaterial({ color: 0x5b3925, roughness: 0.8 }));
+gunStock.position.set(0, -0.03, 0.28); gun.add(gunStock);
+const gunScope = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, 0.34), new THREE.MeshStandardMaterial({ color: 0x101418, metalness: 0.8 }));
+gunScope.rotation.x = Math.PI / 2; gunScope.position.set(0, 0.15, -0.32); gun.add(gunScope);
 
 // Umístění zbraně vůči kameře: kousek doprava, dolů a dopředu
 gun.position.set(0.25, -0.25, -0.6);
@@ -515,9 +761,16 @@ const muzzleFlash = new THREE.Mesh(
   new THREE.SphereGeometry(0.08, 8, 8),
   new THREE.MeshBasicMaterial({ color: 0xffdd55 })
 );
-muzzleFlash.position.set(0, 0.02, -0.8);
+muzzleFlash.position.set(0, 0.05, -1.3);
 muzzleFlash.visible = false;
 gun.add(muzzleFlash);
+
+// Zbraň z předchozí hry je výhradně odměnou za volbu Kariéra.
+function updatePlayerWeapon() {
+  gun.visible = gameMode === 'career';
+  if (fireBtn) fireBtn.style.opacity = gameMode === 'career' ? '1' : '0.35';
+}
+updatePlayerWeapon();
 
 // --- Raycaster = "paprsek" ze středu obrazovky (kam míříme) ---
 const raycaster = new THREE.Raycaster();
@@ -548,12 +801,13 @@ function makeImpact(point, normal) {
 let recoil = 0;
 
 function shoot() {
+  if (gameMode !== 'career') return;
   // Vyšleme paprsek ze středu obrazovky do scény.
   // Cílem jsou stěny/sloupy i nepřátelé – bereme ten NEJBLIŽŠÍ zásah,
   // takže stěna před nepřítelem ho správně zacloní.
   raycaster.setFromCamera(screenCenter, camera);
   const targets = shootables.concat(enemies.map(e => e.sprite));
-  const hits = raycaster.intersectObjects(targets, false);
+  const hits = raycaster.intersectObjects(targets, true);
 
   if (hits.length > 0) {
     const hit = hits[0];
@@ -638,12 +892,58 @@ function playHurt() {
   beep(110, 0.16, 'sawtooth', 0.12);
 }
 
+const enemyRaycaster = new THREE.Raycaster();
+function hasLineOfSight(enemy) {
+  const origin = enemy.sprite.position.clone().add(new THREE.Vector3(0, 1.35, 0));
+  const target = camera.position.clone();
+  const direction = target.clone().sub(origin);
+  const distance = direction.length();
+  enemyRaycaster.set(origin, direction.normalize(), 0.05, distance - 0.15);
+  return enemyRaycaster.intersectObjects(shootables, true).length === 0;
+}
+
+function showEnemyTracer(enemy) {
+  const start = enemy.sprite.position.clone().add(new THREE.Vector3(0, 1.35, 0));
+  const end = camera.position.clone();
+  const tracer = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints([start, end]),
+    new THREE.LineBasicMaterial({ color: 0xffb347, transparent: true, opacity: 0.9 })
+  );
+  scene.add(tracer);
+  setTimeout(() => scene.remove(tracer), 65);
+}
+
+// Ozbrojení vojáci nestřílejí skrz zeď, pás ani nábytek – kryty mají smysl.
+function enemyGunAttacks(dt) {
+  for (const e of enemies) {
+    const settings = enemySettings[e.kind];
+    if (!settings.gunRange) continue;
+    e.shotCooldown -= dt;
+    const dx = camera.position.x - e.sprite.position.x;
+    const dz = camera.position.z - e.sprite.position.z;
+    if (dx * dx + dz * dz > settings.gunRange * settings.gunRange || e.shotCooldown > 0 || !hasLineOfSight(e)) continue;
+    e.shotCooldown = settings.gunCooldown;
+    playerHealth -= settings.gunDamage;
+    updateHud();
+    playHurt();
+    if (e.muzzle) {
+      e.muzzle.visible = true;
+      setTimeout(() => { if (e.muzzle.parent) e.muzzle.visible = false; }, 70);
+    }
+    showEnemyTracer(e);
+    flashEnemy(e, 0xffcc55, 80);
+    if (playerHealth <= 0) { endGame('💀 Prohráls! Nepřátelé tě dostali.'); return; }
+  }
+}
+
 // ------------------------------------------------------------
 // 6) HERNÍ SMYČKA: běží ~60x za sekundu a překresluje obraz
 // ------------------------------------------------------------
 
 const clock = new THREE.Clock();
 const SPEED = 5; // rychlost chůze (metry za sekundu)
+const STANDING_EYE_HEIGHT = 1.7;
+const CROUCH_EYE_HEIGHT = 1.02;
 
 function animate() {
   requestAnimationFrame(animate);
@@ -657,8 +957,20 @@ function animate() {
   camera.rotation.y = yaw;
   camera.rotation.x = pitch;
 
+  // Levý Ctrl sníží oči za nízký kryt. Plynulý přechod nepůsobí jako skok kamery.
+  const crouchNow = playing && controlMode === 'keyboard' && keys['ControlLeft'];
+  if (crouchNow !== isCrouching) {
+    isCrouching = crouchNow;
+    updateHud();
+  }
+  const desiredEyeHeight = isCrouching ? CROUCH_EYE_HEIGHT : STANDING_EYE_HEIGHT;
+  camera.position.y += (desiredEyeHeight - camera.position.y) * Math.min(1, dt * 13);
+
   // --- Nepřátelé se hýbou k tobě ---
-  if (playing) moveEnemies(dt);
+  if (playing) {
+    moveEnemies(dt);
+    enemyGunAttacks(dt);
+  }
 
   // --- Pohyb (WASD nebo joystick – podle režimu) ---
   if (playing) {
@@ -683,7 +995,7 @@ function animate() {
 
     if (move.lengthSq() > 0) {
       if (move.lengthSq() > 1) move.normalize(); // diagonála/plný joystick = max rychlost
-      move.multiplyScalar(SPEED * dt);
+      move.multiplyScalar(SPEED * (isCrouching ? 0.55 : 1) * dt);
       // Zkusíme pohyb po osách zvlášť, ať to hezky "klouže" podél stěn
       const nx = camera.position.x + move.x;
       const nz = camera.position.z + move.z;
@@ -697,8 +1009,9 @@ function animate() {
     for (const e of enemies) {
       const dx = camera.position.x - e.sprite.position.x;
       const dz = camera.position.z - e.sprite.position.z;
-      if (dx * dx + dz * dz < 2.2 * 2.2) {
-        playerHealth -= 20 * dt; // ubývá životů za sekundu v blízkosti
+      const settings = enemySettings[e.kind];
+      if (dx * dx + dz * dz < settings.touchRange * settings.touchRange) {
+        playerHealth -= settings.touchDamage * dt; // ubývá životů za sekundu v blízkosti
         updateHud();
         playHurt();
         if (playerHealth <= 0) { endGame('💀 Prohráls! Nepřátelé tě dostali.'); break; }
