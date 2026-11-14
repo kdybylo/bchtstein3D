@@ -61,7 +61,8 @@ scene.add(sun);
 const CELL = 4;    // velikost jedné buňky mřížky (metry)
 const WALL_H = 4;  // výška stěn
 
-const MAP = [
+const MAPS = {
+  factory: { name: '🏭 Továrna', layout: [
   "################",
   "#P....#........#",
   "#.....#........#",
@@ -77,7 +78,47 @@ const MAP = [
   "#....#....#....#",
   "#....#....#....#",
   "################",
-];
+  ] },
+  maze: { name: '🌀 Labyrint', layout: [
+    "################",
+    "#P....#........#",
+    "#.###.#.######.#",
+    "#...#.#......#.#",
+    "###.#.######.#.#",
+    "#...#......#.#.#",
+    "#.########.#.#.#",
+    "#.#......#.#.#E#",
+    "#.#.####.#.#.###",
+    "#.#.#..#.#.#...#",
+    "#...#E.#.#.###.#",
+    "#####.##.#...#.#",
+    "#.....#..###.#.#",
+    "#.E......E....E#",
+    "################",
+  ] },
+  arena: { name: '⚔️ Aréna', layout: [
+    "################",
+    "#P.............#",
+    "#..###....###..#",
+    "#..#E#....#E#..#",
+    "#..###....###..#",
+    "#..............#",
+    "#....##..##....#",
+    "#....#....#....#",
+    "#....#....#....#",
+    "#....##..##....#",
+    "#..............#",
+    "#..###....###..#",
+    "#..#E#....#E#..#",
+    "#......E.......#",
+    "################",
+  ] },
+};
+
+const requestedMap = new URLSearchParams(window.location.search).get('map');
+const activeMapId = Object.hasOwn(MAPS, requestedMap) ? requestedMap : 'factory';
+const activeMap = MAPS[activeMapId];
+const MAP = activeMap.layout;
 
 const ROWS = MAP.length;
 const COLS = MAP[0].length;
@@ -280,6 +321,8 @@ addHouseFurniture(18, 14);
 // ------------------------------------------------------------
 
 const overlay = document.getElementById('overlay');
+const mapNameEl = document.getElementById('hud-map');
+if (mapNameEl) mapNameEl.textContent = activeMap.name;
 
 // "yaw" = otáčení doleva/doprava, "pitch" = nahoru/dolů
 let yaw = Math.PI; // otočíme hráče čelem do mapy (ne do rohové stěny)
@@ -321,10 +364,23 @@ const modeButtons = {
   survival: document.getElementById('btn-mode-survival'),
   career: document.getElementById('btn-mode-career'),
 };
+const mapButtons = document.querySelectorAll('[data-map]');
 let gameMode = 'survival';
+
+for (const button of mapButtons) {
+  button.classList.toggle('selected', button.dataset.map === activeMapId);
+  button.addEventListener('click', () => {
+    const map = button.dataset.map;
+    if (!MAPS[map] || map === activeMapId) return;
+    const nextUrl = new URL(window.location.href);
+    nextUrl.searchParams.set('map', map);
+    window.location.assign(nextUrl);
+  });
+}
 
 function selectGameMode(mode) {
   gameMode = mode;
+  aiming = false;
   for (const [name, button] of Object.entries(modeButtons)) {
     button.classList.toggle('selected', name === mode);
   }
@@ -386,16 +442,56 @@ btnTouch.addEventListener('click', () => {
   updatePortraitClass();
 });
 
-// Po konci hry: kliknutí kamkoli na překryv = restart (znovunačtení stránky)
-overlay.addEventListener('click', () => {
-  if (gameOver) location.reload();
+function restartGame() {
+  // Znovunačtení bezpečně vynuluje životy, nepřátele i skóre.
+  window.location.reload();
+}
+
+function showPauseMenu() {
+  overlay.innerHTML = `
+    <h1>⏸️ Hra pozastavena</h1>
+    <p>Mapa: ${activeMap.name}</p>
+    <div class="start-buttons">
+      <button id="btn-resume" class="start-btn"><span class="emoji">▶️</span><span>Pokračovat</span></button>
+      <button id="btn-new-game" class="start-btn danger"><span class="emoji">🔄</span><span>Nová hra</span><span class="sub">zahodí aktuální postup</span></button>
+    </div>`;
+  overlay.classList.remove('hidden');
+}
+
+function showNewGameWarning() {
+  overlay.innerHTML = `
+    <h1>Opravdu začít novou hru?</h1>
+    <p>⚠️ Přijdeš o všechny neuložené postupy v právě rozehrané hře.</p>
+    <div class="start-buttons">
+      <button id="btn-cancel-new-game" class="start-btn"><span class="emoji">↩️</span><span>Zpět</span></button>
+      <button id="btn-confirm-new-game" class="start-btn danger"><span class="emoji">🗑️</span><span>Ano, nová hra</span></button>
+    </div>`;
+}
+
+overlay.addEventListener('click', (event) => {
+  const button = event.target.closest('button');
+  if (!button) return;
+  if (button.id === 'btn-resume') {
+    renderer.domElement.requestPointerLock();
+  } else if (button.id === 'btn-new-game') {
+    showNewGameWarning();
+  } else if (button.id === 'btn-cancel-new-game') {
+    showPauseMenu();
+  } else if (button.id === 'btn-confirm-new-game' || gameOver) {
+    restartGame();
+  }
 });
 
 // Když se myš zamkne/odemkne (jen klávesnicový režim), ukážeme/schováme překryv
 document.addEventListener('pointerlockchange', () => {
   if (controlMode !== 'keyboard') return;
   const locked = document.pointerLockElement === renderer.domElement;
-  overlay.classList.toggle('hidden', locked);
+  if (locked) {
+    overlay.classList.add('hidden');
+  } else if (!gameOver) {
+    aiming = false;
+    showPauseMenu();
+  }
 });
 
 // Konec hry – ukáže zprávu; kliknutím se hra restartuje
@@ -404,7 +500,7 @@ function endGame(message) {
   gameOver = true;
   document.exitPointerLock();
   document.body.classList.remove('touch-mode'); // schovat dotykové ovladače
-  overlay.innerHTML = '<h1>' + message + '</h1><p>Klikni pro nový pokus</p>';
+  overlay.innerHTML = '<h1>' + message + '</h1><p>Hra skončila. Klikni na tlačítko pro nový pokus.</p><button class="start-btn"><span class="emoji">🔄</span><span>Nový pokus</span></button>';
   overlay.classList.remove('hidden');
 }
 
@@ -596,35 +692,65 @@ function makeEasyFigure() {
   return { model: sprite, muzzle: null, simple: true };
 }
 
-// Jednoduchý, ale skutečně prostorový voják místo původního plochého obrázku.
+// Prostorový voják složený z částí těla a výstroje. Drobný detail je čitelný
+// i z dálky, ale model zůstává dostatečně lehký pro více nepřátel najednou.
 function makeEnemySoldier(kind) {
   if (kind === 'easy') return makeEasyFigure();
   const model = new THREE.Group();
   const uniformColor = kind === 'hard' ? 0x354a58 : kind === 'medium' ? 0x55623f : 0x52634b;
-  const uniform = new THREE.MeshStandardMaterial({ color: uniformColor, roughness: 0.8 });
-  const skin = new THREE.MeshStandardMaterial({ color: 0xb77d5c, roughness: 0.9 });
-  const dark = new THREE.MeshStandardMaterial({ color: 0x1b2024, roughness: 0.65 });
+  const uniform = new THREE.MeshStandardMaterial({ color: uniformColor, roughness: 0.78 });
+  const vest = new THREE.MeshStandardMaterial({ color: 0x303c35, roughness: 0.68 });
+  const skin = new THREE.MeshStandardMaterial({ color: 0xb77d5c, roughness: 0.88 });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x1b2024, roughness: 0.58, metalness: 0.12 });
+  const boot = new THREE.MeshStandardMaterial({ color: 0x191817, roughness: 0.9 });
+  const rifleMetal = new THREE.MeshStandardMaterial({ color: 0x252b2d, roughness: 0.42, metalness: 0.68 });
 
-  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.75, 0.28), uniform);
-  torso.position.y = 1.25; model.add(torso);
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.23, 12, 10), skin);
-  head.position.y = 1.83; model.add(head);
-  const helmet = new THREE.Mesh(new THREE.SphereGeometry(0.245, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2), dark);
-  helmet.position.y = 1.9; model.add(helmet);
+  const hips = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.28, 0.18, 10), uniform);
+  hips.position.y = 0.88; model.add(hips);
+  const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.31, 0.27, 0.62, 10), uniform);
+  torso.position.y = 1.28; model.add(torso);
+  const armour = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.47, 0.17), vest);
+  armour.position.set(0, 1.32, -0.16); model.add(armour);
+  const belt = new THREE.Mesh(new THREE.TorusGeometry(0.275, 0.025, 5, 10), dark);
+  belt.rotation.x = Math.PI / 2; belt.position.y = 1.01; model.add(belt);
+
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.105, 0.12, 0.15, 10), skin);
+  neck.position.y = 1.67; model.add(neck);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.22, 14, 11), skin);
+  head.scale.set(0.9, 1.08, 0.92); head.position.y = 1.84; model.add(head);
+  const helmet = new THREE.Mesh(new THREE.SphereGeometry(0.247, 14, 9, 0, Math.PI * 2, 0, Math.PI * 0.58), dark);
+  helmet.position.y = 1.94; model.add(helmet);
+  const visor = new THREE.Mesh(new THREE.BoxGeometry(0.31, 0.07, 0.035), new THREE.MeshStandardMaterial({ color: 0x10191d, metalness: 0.6, roughness: 0.26 }));
+  visor.position.set(0, 1.86, -0.203); model.add(visor);
+  const backpack = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.47, 0.16), vest);
+  backpack.position.set(0, 1.37, 0.2); model.add(backpack);
   for (const side of [-1, 1]) {
-    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.72, 0.2), dark);
-    leg.position.set(side * 0.16, 0.43, 0); model.add(leg);
-    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.62, 0.16), uniform);
-    arm.position.set(side * 0.37, 1.28, -0.05); arm.rotation.z = side * 0.2; model.add(arm);
+    const thigh = new THREE.Mesh(new THREE.CylinderGeometry(0.115, 0.14, 0.42, 8), uniform);
+    thigh.position.set(side * 0.15, 0.65, 0); thigh.rotation.z = side * 0.04; model.add(thigh);
+    const knee = new THREE.Mesh(new THREE.SphereGeometry(0.125, 8, 7), dark);
+    knee.scale.set(1, 0.68, 0.86); knee.position.set(side * 0.15, 0.45, -0.045); model.add(knee);
+    const shin = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.11, 0.38, 8), uniform);
+    shin.position.set(side * 0.15, 0.25, 0.015); model.add(shin);
+    const foot = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.12, 0.31), boot);
+    foot.position.set(side * 0.15, 0.07, -0.07); model.add(foot);
+
+    const shoulder = new THREE.Mesh(new THREE.SphereGeometry(0.15, 9, 8), uniform);
+    shoulder.position.set(side * 0.33, 1.54, -0.01); model.add(shoulder);
+    const upperArm = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.105, 0.34, 8), uniform);
+    upperArm.position.set(side * 0.37, 1.36, -0.16); upperArm.rotation.z = side * 0.36; model.add(upperArm);
+    const glove = new THREE.Mesh(new THREE.SphereGeometry(0.09, 8, 7), dark);
+    glove.position.set(side * 0.32, 1.22, -0.36); model.add(glove);
   }
 
   // Voják drží pušku ve všech bojových režimech; Easy zůstává beze zbraně.
-  const rifle = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, 0.85), dark);
-  rifle.position.set(0.35, 1.38, -0.42); rifle.rotation.x = Math.PI / 2; model.add(rifle);
+  const rifle = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, 0.85), rifleMetal);
+  rifle.position.set(0.2, 1.33, -0.48); rifle.rotation.x = Math.PI / 2; model.add(rifle);
   const stock = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.16, 0.3), new THREE.MeshStandardMaterial({ color: 0x4a3321 }));
-  stock.position.set(0.35, 1.3, -0.18); model.add(stock);
+  stock.position.set(0.2, 1.27, -0.22); model.add(stock);
+  const rifleScope = new THREE.Mesh(new THREE.CylinderGeometry(0.042, 0.042, 0.22, 8), dark);
+  rifleScope.rotation.x = Math.PI / 2; rifleScope.position.set(0.2, 1.43, -0.42); model.add(rifleScope);
   const muzzle = new THREE.Mesh(new THREE.SphereGeometry(0.055, 8, 8), new THREE.MeshBasicMaterial({ color: 0xffcc55 }));
-  muzzle.position.set(0.35, 1.38, -0.9); muzzle.visible = false; model.add(muzzle);
+  muzzle.position.set(0.2, 1.33, -0.95); muzzle.visible = false; model.add(muzzle);
   model.scale.setScalar(0.9);
   return { model, muzzle };
 }
@@ -677,7 +803,11 @@ const stanceEl = document.getElementById('hud-stance');
 function updateHud() {
   if (healthEl) healthEl.textContent = '❤️ Životy: ' + Math.max(0, Math.ceil(playerHealth));
   if (killsEl) killsEl.textContent = '💀 Zabito: ' + kills + ' | Aktivních: ' + enemies.length;
-  if (stanceEl) stanceEl.textContent = isCrouching ? '🛡️ Skrčený za krytem' : '';
+  if (stanceEl) {
+    if (isCrouching) stanceEl.textContent = '🛡️ Skrčený za krytem';
+    else if (gameMode === 'survival') stanceEl.textContent = '👊 Přežití: levé tlačítko = úder | pravé = míření';
+    else stanceEl.textContent = '🎯 Pravé tlačítko = míření';
+  }
 }
 updateHud();
 
@@ -756,6 +886,34 @@ gunScope.rotation.x = Math.PI / 2; gunScope.position.set(0, 0.15, -0.32); gun.ad
 gun.position.set(0.25, -0.25, -0.6);
 camera.add(gun); // připneme ke kameře, ať se hýbe s pohledem
 
+// Ruce pro režim Přežití: předloktí, dlaň, čtyři klouby a palec místo jedné
+// koule. Díky tomu silueta působí jako sevřená lidská pěst i při pohybu.
+const fists = new THREE.Group();
+const fistMaterial = new THREE.MeshStandardMaterial({ color: 0xb77d5c, roughness: 0.85 });
+const nailMaterial = new THREE.MeshStandardMaterial({ color: 0xd29c7d, roughness: 0.92 });
+for (const side of [-1, 1]) {
+  const forearm = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.12, 0.55, 10), fistMaterial);
+  forearm.rotation.x = Math.PI / 2;
+  forearm.position.set(side * 0.28, -0.32, -0.54);
+  fists.add(forearm);
+  const wrist = new THREE.Mesh(new THREE.SphereGeometry(0.11, 10, 8), fistMaterial);
+  wrist.scale.set(0.82, 0.9, 1.15); wrist.position.set(side * 0.28, -0.31, -0.76); fists.add(wrist);
+  const palm = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.18, 0.16, 3, 2, 2), fistMaterial);
+  palm.position.set(side * 0.28, -0.29, -0.88); palm.rotation.z = side * -0.12; fists.add(palm);
+  for (let finger = 0; finger < 4; finger++) {
+    const knuckle = new THREE.Mesh(new THREE.SphereGeometry(0.058 - finger * 0.003, 9, 7), fistMaterial);
+    knuckle.scale.set(0.82, 0.7, 1.06);
+    knuckle.position.set(side * (0.19 + finger * 0.058), -0.245, -0.98 + (finger === 0 ? 0.018 : 0));
+    fists.add(knuckle);
+    const nail = new THREE.Mesh(new THREE.SphereGeometry(0.027, 7, 5), nailMaterial);
+    nail.scale.set(0.7, 0.3, 1); nail.position.copy(knuckle.position);
+    nail.position.y += 0.032; nail.position.z -= 0.04; fists.add(nail);
+  }
+  const thumb = new THREE.Mesh(new THREE.CapsuleGeometry(0.045, 0.11, 5, 8), fistMaterial);
+  thumb.position.set(side * 0.43, -0.32, -0.91); thumb.rotation.z = side * 0.75; thumb.rotation.x = Math.PI / 2.7; fists.add(thumb);
+}
+camera.add(fists);
+
 // Výšleh z hlavně (malá žlutá "koule", normálně schovaná)
 const muzzleFlash = new THREE.Mesh(
   new THREE.SphereGeometry(0.08, 8, 8),
@@ -765,10 +923,14 @@ muzzleFlash.position.set(0, 0.05, -1.3);
 muzzleFlash.visible = false;
 gun.add(muzzleFlash);
 
-// Zbraň z předchozí hry je výhradně odměnou za volbu Kariéra.
+// Kariéra používá pušku, Přežití ruční souboj.
 function updatePlayerWeapon() {
   gun.visible = gameMode === 'career';
-  if (fireBtn) fireBtn.style.opacity = gameMode === 'career' ? '1' : '0.35';
+  fists.visible = gameMode === 'survival';
+  if (fireBtn) {
+    fireBtn.style.opacity = '1';
+    fireBtn.textContent = gameMode === 'career' ? '🔫' : '👊';
+  }
 }
 updatePlayerWeapon();
 
@@ -799,6 +961,11 @@ function makeImpact(point, normal) {
 
 // Zpětný ráz: po výstřelu zbraň lehce "cukne" dozadu a vrátí se
 let recoil = 0;
+let punchRecoil = 0;
+let punchCooldown = 0;
+let aiming = false;
+const NORMAL_FOV = 75;
+const AIM_FOV = 27;
 
 function shoot() {
   if (gameMode !== 'career') return;
@@ -830,12 +997,39 @@ function shoot() {
   playShot();
 }
 
-// Levé tlačítko myši = výstřel (jen když hrajeme = myš je zamčená)
+function punch() {
+  if (gameMode !== 'survival' || punchCooldown > 0) return;
+  punchCooldown = 0.42;
+  punchRecoil = 0.24;
+  // Úder zasáhne jen nepřítele přímo před hráčem a maximálně na délku paže.
+  raycaster.setFromCamera(screenCenter, camera);
+  raycaster.far = 2.25;
+  const targets = shootables.concat(enemies.map(e => e.sprite));
+  const hit = raycaster.intersectObjects(targets, true)[0];
+  raycaster.far = Infinity;
+  if (hit && hit.object.userData.enemyRef) {
+    damageEnemy(hit.object.userData.enemyRef);
+    flashEnemy(hit.object.userData.enemyRef, 0xffb347, 90);
+  } else {
+    beep(85, 0.05, 'square', 0.08);
+  }
+}
+
+function playerAttack() {
+  if (gameMode === 'career') shoot();
+  else punch();
+}
+
+// Levé tlačítko útočí. Pravé tlačítko přidrží přesné zamíření jako v Mafii.
 document.addEventListener('mousedown', (e) => {
-  if (e.button !== 0) return;
   if (document.pointerLockElement !== renderer.domElement) return;
-  shoot();
+  if (e.button === 0) playerAttack();
+  if (e.button === 2 && gameMode === 'career') aiming = true;
 });
+document.addEventListener('mouseup', (e) => {
+  if (e.button === 2) aiming = false;
+});
+document.addEventListener('contextmenu', (e) => e.preventDefault());
 
 // ------------------------------------------------------------
 // 5c) ZVUKY (vytvořené v kódu přes Web Audio – nic se nestahuje)
@@ -957,6 +1151,15 @@ function animate() {
   camera.rotation.y = yaw;
   camera.rotation.x = pitch;
 
+  // Zamíření pravým tlačítkem zúží zorné pole a přitáhne optiku do středu.
+  const scopeActive = playing && aiming && gameMode === 'career';
+  const targetFov = scopeActive ? AIM_FOV : NORMAL_FOV;
+  document.body.classList.toggle('scope-active', scopeActive);
+  if (Math.abs(camera.fov - targetFov) > 0.05) {
+    camera.fov += (targetFov - camera.fov) * Math.min(1, dt * 15);
+    camera.updateProjectionMatrix();
+  }
+
   // Levý Ctrl sníží oči za nízký kryt. Plynulý přechod nepůsobí jako skok kamery.
   const crouchNow = playing && controlMode === 'keyboard' && keys['ControlLeft'];
   if (crouchNow !== isCrouching) {
@@ -1022,14 +1225,20 @@ function animate() {
   // --- Auto-střelba při držení dotykového tlačítka ---
   if (playing && controlMode === 'touch' && touchFiring) {
     fireCooldown -= dt;
-    if (fireCooldown <= 0) { shoot(); fireCooldown = 0.25; } // ~4 rány/s
+    if (fireCooldown <= 0) { playerAttack(); fireCooldown = gameMode === 'career' ? 0.25 : 0.42; }
   }
 
   // --- Zpětný ráz zbraně: cukne dozadu (+z) a plynule se vrací ---
   if (recoil > 0) {
     recoil = Math.max(0, recoil - dt * 0.4); // rychlost návratu
   }
-  gun.position.z = -0.6 + recoil;
+  const gunTarget = scopeActive ? new THREE.Vector3(0, -0.15, -0.3 + recoil) : new THREE.Vector3(0.25, -0.25, -0.6 + recoil);
+  gun.position.lerp(gunTarget, Math.min(1, dt * 18));
+
+  punchCooldown = Math.max(0, punchCooldown - dt);
+  punchRecoil = Math.max(0, punchRecoil - dt * 1.5);
+  fists.position.z = punchRecoil > 0 ? -punchRecoil * 2.2 : 0;
+  fists.position.x = 0;
 
   // Výšleh z hlavně svítí jen velmi krátce
   if (muzzleFlash.visible && recoil < 0.05) {
